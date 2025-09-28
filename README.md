@@ -5,8 +5,14 @@ A microservice that provides evidence information based on control IDs. Built wi
 ## Features
 
 - RESTful API endpoint `/getEvidences`
-- Query evidences by control ID
-- Randomly generated system IDs for each evidence (32 characters)
+- Query evidences by control ID (1234 for DataDog, 5678 for Sonar)
+- Returns 10-26 evidences per request
+- Unique appIDs (A through Z) for each evidence
+- Evidence type based on control ID:
+  - controlId 1234: DataDog evidences
+  - controlId 5678: Sonar evidences
+- Random SUCCESS/FAILED status for each evidence
+- Randomly generated 32-character system IDs
 - Docker support
 - Task-based workflow for development and deployment
 
@@ -93,26 +99,62 @@ task docker:clean
 
 **Query Parameters:**
 - `controlId` (required): The ID of the control to fetch evidences for
+  - Use "1234" for DataDog evidences
+  - Use "5678" for Sonar evidences
 
-**Example Request:**
+**Response Details:**
+- Returns between 10 and 26 evidences per request
+- Each evidence has a unique appID (A through Z)
+- Evidence type is determined by controlId
+- Evidence status is randomly either "SUCCESS" or "FAILED"
+- Each evidence has a unique 32-character sysID with "sys_" prefix
+
+**Example Request for DataDog:**
 ```bash
 curl "http://localhost:8080/getEvidences?controlId=1234"
 ```
 
-**Example Response:**
+**Example Response for DataDog:**
 ```json
 [
   {
     "evidenceId": "sys_1a2b3c4d5e6f7890abcdef0123456789",
-    "evidenceType": "document",
+    "evidenceType": "dataDog",
     "controlId": "1234",
-    "evidenceStatus": "SUCCESS"
+    "evidenceStatus": "SUCCESS",
+    "appId": "A"
   },
   {
     "evidenceId": "sys_0987654321fedcba0123456789abcdef",
-    "evidenceType": "audit",
+    "evidenceType": "dataDog",
     "controlId": "1234",
-    "evidenceStatus": "SUCCESS"
+    "evidenceStatus": "FAILED",
+    "appId": "B"
+  }
+]
+```
+
+**Example Request for Sonar:**
+```bash
+curl "http://localhost:8080/getEvidences?controlId=5678"
+```
+
+**Example Response for Sonar:**
+```json
+[
+  {
+    "evidenceId": "sys_abcdef1234567890fedcba0987654321",
+    "evidenceType": "sonar",
+    "controlId": "5678",
+    "evidenceStatus": "SUCCESS",
+    "appId": "X"
+  },
+  {
+    "evidenceId": "sys_fedcba0987654321abcdef1234567890",
+    "evidenceType": "sonar",
+    "controlId": "5678",
+    "evidenceStatus": "FAILED",
+    "appId": "Y"
   }
 ]
 ```

@@ -121,5 +121,12 @@ tasks:
   build:all:
     desc: Build and run Docker container locally
     cmds:
+      - task: docker:clean
       - task: docker:build
       - task: docker:run
+      - task: docker:logs
+    sources:
+      - main.go
+      - go.mod
+      - go.sum
+      - Dockerfile
