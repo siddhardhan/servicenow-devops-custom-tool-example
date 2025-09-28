@@ -7,7 +7,15 @@ import (
     "time"
 
     "github.com/gin-gonic/gin"
+    swaggerFiles "github.com/swaggo/files"     // swagger embed files
+    ginSwagger "github.com/swaggo/gin-swagger" // gin-swagger middleware
 )
+
+// @title Evidence Service API
+// @version 1.0
+// @description A service that provides evidence information based on control IDs.
+// @host localhost:8080
+// @BasePath /v1
 
 // getRandomStatus returns a random evidence status (SUCCESS or FAILED)
 func getRandomStatus() string {
@@ -26,13 +34,20 @@ func generateSysID() string {
     return fmt.Sprintf("sys_%s", string(sysID))
 }
 
+// ErrorResponse represents the structure of error responses
+type ErrorResponse struct {
+    Status  int    `json:"status" example:"400"`
+    Message string `json:"message" example:"Control ID is required"`
+    Code    string `json:"code" example:"MISSING_CONTROL_ID"`
+}
+
 // Evidence represents the evidence data structure
 type Evidence struct {
-    EvidenceID     string `json:"evidenceId"`
-    EvidenceType   string `json:"evidenceType"`
-    ControlID      string `json:"controlId"`
-    EvidenceStatus string `json:"evidenceStatus"`
-    AppID          string `json:"appId"`
+    EvidenceID     string `json:"evidenceId" example:"sys_1a2b3c4d5e6f7890abcdef0123456789"`
+    EvidenceType   string `json:"evidenceType" example:"dataDog" enums:"dataDog,sonar"`
+    ControlID      string `json:"controlId" example:"1234" enums:"1234,5678"`
+    EvidenceStatus string `json:"evidenceStatus" example:"SUCCESS" enums:"SUCCESS,FAILED"`
+    AppID          string `json:"appId" example:"A"`
 }
 
 // EvidenceTemplate represents the structure of our mock data
@@ -47,13 +62,23 @@ var evidenceTemplates = []EvidenceTemplate{
     {EvidenceType: "sonar", ControlID: "5678"},
 }
 
-// getEvidencesHandler handles the /getEvidences endpoint
+// @Summary Get evidences by control ID
+// @Description Returns a list of evidences filtered by the provided control ID
+// @Tags evidence
+// @Accept json
+// @Produce json
+// @Param controlId query string true "Control ID (1234 for DataDog, 5678 for Sonar)"
+// @Success 200 {array} Evidence
+// @Failure 400 {object} ErrorResponse
+// @Router /evidences [get]
 func getEvidencesHandler(c *gin.Context) {
     // Get the controlId from query parameters
     controlID := c.Query("controlId")
     if controlID == "" {
-        c.JSON(http.StatusBadRequest, gin.H{
-            "error": "controlId is required",
+        c.JSON(http.StatusBadRequest, ErrorResponse{
+            Status:  http.StatusBadRequest,
+            Message: "Control ID is required",
+            Code:    "MISSING_CONTROL_ID",
         })
         return
     }
@@ -77,6 +102,12 @@ func getEvidencesHandler(c *gin.Context) {
         if template.ControlID == controlID {
             matchingTemplates = append(matchingTemplates, template)
         }
+    }
+
+    // Return empty array if no matching templates found
+    if len(matchingTemplates) == 0 {
+        c.JSON(http.StatusOK, []Evidence{})
+        return
     }
 
     // Generate fresh evidences
@@ -122,8 +153,19 @@ func main() {
     // Create a new Gin router with default middleware
     r := gin.Default()
 
-    // Register the handler for /getEvidences endpoint
-    r.GET("/getEvidences", getEvidencesHandler)
+    // Configure Swagger
+    config := &ginSwagger.Config{
+        URL: "/docs/swagger.json",
+    }
+    r.GET("/swagger/*any", ginSwagger.CustomWrapHandler(config, swaggerFiles.Handler))
+    r.Static("/docs", "./docs")
+
+    // Create v1 route group
+    v1 := r.Group("/v1")
+    {
+        // Register the handler for /v1/evidences endpoint
+        v1.GET("/evidences", getEvidencesHandler)
+    }
 
     // Start the server
     fmt.Println("Starting server on :8080")
