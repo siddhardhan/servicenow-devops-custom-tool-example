@@ -1,9 +1,16 @@
 version: '3'
 
+dotenv: ['.env']
+
 vars:
-  DOCKER_IMAGE: evidence-service
-  DOCKER_TAG: latest
-  PORT: 8080
+  DOCKER_REGISTRY: '{{.DOCKER_REGISTRY}}'
+  DOCKER_IMAGE: '{{.DOCKER_IMAGE}}'
+  DOCKER_TAG: '{{.DOCKER_TAG}}'
+  PORT: '{{.PORT}}'
+  RESOURCE_GROUP: '{{.AZURE_RESOURCE_GROUP}}'
+  LOCATION: '{{.AZURE_LOCATION}}'
+  CONTAINER_APP_NAME: '{{.CONTAINER_APP_NAME}}'
+  CONTAINER_APP_ENV: '{{.CONTAINER_APP_ENV}}'
 
 tasks:
   build:
@@ -55,8 +62,64 @@ tasks:
     cmds:
       - go run main.go
 
-  all:
-    desc: Build and run Docker container
+  docker:tag:
+    desc: Tag Docker image for registry
+    cmds:
+      - docker tag {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+
+  docker:push:
+    desc: Push Docker image to registry
+    deps: [docker:tag]
+    cmds:
+      - docker push {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+
+  azure:login:
+    desc: Login to Azure
+    cmds:
+      - az login
+      - az account set --subscription <your-subscription-id>
+
+  azure:acr-login:
+    desc: Login to Azure Container Registry
+    cmds:
+      - az acr login --name {{.DOCKER_REGISTRY}}
+
+  azure:create-rg:
+    desc: Create Azure Resource Group
+    cmds:
+      - az group create --name {{.RESOURCE_GROUP}} --location {{.LOCATION}}
+
+  azure:create-env:
+    desc: Create Azure Container Apps Environment
+    deps: [azure:create-rg]
+    cmds:
+      - az containerapp env create
+        --name {{.CONTAINER_APP_ENV}}
+        --resource-group {{.RESOURCE_GROUP}}
+        --location {{.LOCATION}}
+
+  azure:deploy:
+    desc: Deploy to Azure Container Apps
+    deps: [docker:push]
+    cmds:
+      - az containerapp create
+        --name {{.CONTAINER_APP_NAME}}
+        --resource-group {{.RESOURCE_GROUP}}
+        --environment {{.CONTAINER_APP_ENV}}
+        --image {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+        --target-port {{.PORT}}
+        --ingress external
+        --query properties.configuration.ingress.fqdn
+
+  deploy:all:
+    desc: Build, push and deploy to Azure
+    cmds:
+      - task: docker:build
+      - task: docker:push
+      - task: azure:deploy
+
+  build:all:
+    desc: Build and run Docker container locally
     cmds:
       - task: docker:build
       - task: docker:run

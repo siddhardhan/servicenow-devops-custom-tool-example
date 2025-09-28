@@ -57,7 +57,7 @@ Build and run using Docker:
 
 ```bash
 # Build and run in one command
-task all
+task build:all
 
 # Or run individual commands
 task docker:build
@@ -147,10 +147,92 @@ evidence-service/
 
 ### Environment Variables
 
-Default configuration:
-- Port: 8080
-- Docker image name: evidence-service
-- Docker tag: latest
+1. Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+2. Update the following variables in `.env`:
+
+Azure Configuration:
+- `AZURE_SUBSCRIPTION_ID`: Your Azure subscription ID
+- `AZURE_TENANT_ID`: Your Azure tenant ID
+- `AZURE_LOCATION`: Azure region (default: eastus)
+
+Resource Names:
+- `AZURE_RESOURCE_GROUP`: Resource group name
+- `AZURE_CONTAINER_REGISTRY`: Your ACR name
+- `CONTAINER_APP_NAME`: Container App name
+- `CONTAINER_APP_ENV`: Container App environment name
+
+Docker Configuration:
+- `DOCKER_REGISTRY`: Will be automatically set based on ACR name
+- `DOCKER_IMAGE`: Docker image name (default: evidence-service)
+- `DOCKER_TAG`: Docker image tag (default: latest)
+
+Application Configuration:
+- `PORT`: Application port (default: 8080)
+- `GIN_MODE`: Gin framework mode (default: release)
+
+## Cloud Deployment
+
+### Prerequisites
+
+1. Azure CLI installed
+2. Azure subscription
+3. Azure Container Registry (ACR)
+4. Proper permissions to create resources in Azure
+
+### Setup Azure Resources
+
+1. Login to Azure:
+```bash
+task azure:login
+```
+
+2. Login to Azure Container Registry:
+```bash
+task azure:acr-login
+```
+
+3. Create Resource Group and Container Apps Environment:
+```bash
+task azure:create-rg
+task azure:create-env
+```
+
+### Deploy to Azure
+
+1. Build and push to registry:
+```bash
+task docker:build
+task docker:push
+```
+
+2. Deploy to Azure Container Apps:
+```bash
+task azure:deploy
+```
+
+Or do everything in one command:
+```bash
+task deploy:all
+```
+
+### Configuration
+
+Update the following variables in `Taskfile.yml` before deployment:
+
+```yaml
+vars:
+  DOCKER_REGISTRY: your-registry.azurecr.io
+  RESOURCE_GROUP: evidence-service-rg
+  LOCATION: eastus
+  CONTAINER_APP_NAME: evidence-service
+  CONTAINER_APP_ENV: evidence-env
+```
+
+Also, make sure to set your Azure subscription ID in the `azure:login` task.
 
 ## Contributing
 
