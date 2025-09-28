@@ -1,0 +1,62 @@
+version: '3'
+
+vars:
+  DOCKER_IMAGE: evidence-service
+  DOCKER_TAG: latest
+  PORT: 8080
+
+tasks:
+  build:
+    desc: Build the Go application locally
+    cmds:
+      - go build -o evidence-service
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v ./...
+
+  docker:build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} .
+
+  docker:run:
+    desc: Run Docker container in background
+    cmds:
+      - docker run -d --name {{.DOCKER_IMAGE}} -p {{.PORT}}:{{.PORT}} {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+      - echo "Container started in background. Access at http://localhost:{{.PORT}}"
+      - echo "Use 'task docker:logs' to view logs or 'task docker:stop' to stop the container"
+
+  docker:stop:
+    desc: Stop running container
+    cmds:
+      - docker stop {{.DOCKER_IMAGE}} || true
+      - docker rm {{.DOCKER_IMAGE}} || true
+
+  docker:clean:
+    desc: Remove Docker image
+    cmds:
+      - task: docker:stop
+      - docker rmi {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} || true
+
+  docker:logs:
+    desc: View container logs
+    cmds:
+      - docker logs -f {{.DOCKER_IMAGE}}
+
+  docker:status:
+    desc: Check container status
+    cmds:
+      - docker ps --filter name={{.DOCKER_IMAGE}}
+
+  dev:
+    desc: Run the application locally for development
+    cmds:
+      - go run main.go
+
+  all:
+    desc: Build and run Docker container
+    cmds:
+      - task: docker:build
+      - task: docker:run
