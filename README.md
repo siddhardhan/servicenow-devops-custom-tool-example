@@ -2,9 +2,14 @@
 
 A microservice that provides evidence information based on control IDs. Built with Go and Gin framework.
 
+## Documentation
+
+- **API Documentation (Swagger UI)**: Available at `http://localhost:8080/swagger/index.html`
+- **OpenAPI Specification**: Available at `http://localhost:8080/swagger/doc.json`
+
 ## Features
 
-- RESTful API endpoint `/getEvidences`
+- RESTful API endpoint `/v1/evidences`
 - Query evidences by control ID (1234 for DataDog, 5678 for Sonar)
 - Returns 10-26 evidences per request
 - Unique appIDs (A through Z) for each evidence
@@ -95,7 +100,7 @@ task docker:clean
 
 ### Get Evidences
 
-**Endpoint:** `GET /getEvidences`
+**Endpoint:** `GET /v1/evidences`
 
 **Query Parameters:**
 - `controlId` (required): The ID of the control to fetch evidences for
@@ -111,7 +116,7 @@ task docker:clean
 
 **Example Request for DataDog:**
 ```bash
-curl "http://localhost:8080/getEvidences?controlId=1234"
+curl "http://localhost:8080/v1/evidences?controlId=1234"
 ```
 
 **Example Response for DataDog:**
@@ -136,7 +141,7 @@ curl "http://localhost:8080/getEvidences?controlId=1234"
 
 **Example Request for Sonar:**
 ```bash
-curl "http://localhost:8080/getEvidences?controlId=5678"
+curl "http://localhost:8080/v1/evidences?controlId=5678"
 ```
 
 **Example Response for Sonar:**

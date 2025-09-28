@@ -1,0 +1,76 @@
+basePath: /v1
+definitions:
+  main.ErrorResponse:
+    properties:
+      code:
+        example: MISSING_CONTROL_ID
+        type: string
+      message:
+        example: Control ID is required
+        type: string
+      status:
+        example: 400
+        type: integer
+    type: object
+  main.Evidence:
+    properties:
+      appId:
+        example: A
+        type: string
+      controlId:
+        enum:
+        - "1234"
+        - "5678"
+        example: "1234"
+        type: string
+      evidenceId:
+        example: sys_1a2b3c4d5e6f7890abcdef0123456789
+        type: string
+      evidenceStatus:
+        enum:
+        - SUCCESS
+        - FAILED
+        example: SUCCESS
+        type: string
+      evidenceType:
+        enum:
+        - dataDog
+        - sonar
+        example: dataDog
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: A service that provides evidence information based on control IDs.
+  title: Evidence Service API
+  version: "1.0"
+paths:
+  /evidences:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of evidences filtered by the provided control ID
+      parameters:
+      - description: Control ID (1234 for DataDog, 5678 for Sonar)
+        in: query
+        name: controlId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Evidence'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Get evidences by control ID
+      tags:
+      - evidence
+swagger: "2.0"
