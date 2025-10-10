@@ -26,6 +26,29 @@ A microservice that provides evidence information based on control IDs. Built wi
 - Go 1.21 or later
 - Docker (for containerized deployment)
 - Task (for running task commands)
+- Azure CLI (for Azure deployments)
+- An Azure subscription with permissions to:
+  - Create and manage Container Apps
+  - Create and manage Container Registries
+
+## Azure Setup
+
+1. Ensure you're logged into Azure CLI:
+```bash
+az login
+```
+
+2. Create an Azure Container Registry:
+```bash
+task azure:create-acr
+```
+
+This will create an ACR with admin access enabled, which is required for Container App authentication.
+
+3. Get ACR credentials (if needed for manual verification):
+```bash
+task azure:get-acr-creds
+```
 
 ## Installation
 
@@ -237,49 +260,123 @@ Application Configuration:
 task azure:login
 ```
 
-2. Login to Azure Container Registry:
+2. Create Resource Group and Container Apps Environment:
+```bash
+task azure:create-rg
+```
+
+3. Create Azure Container Registry:
+```bash
+task azure:create-acr
+```
+This creates an ACR with admin access enabled for Container App authentication.
+
+4. Login to Azure Container Registry:
 ```bash
 task azure:acr-login
 ```
 
-3. Create Resource Group and Container Apps Environment:
+5. Create Container Apps Environment:
 ```bash
-task azure:create-rg
 task azure:create-env
 ```
 
+The deployment process will automatically handle ACR authentication using admin credentials.
+
 ### Deploy to Azure
 
-1. Build and push to registry:
-```bash
-task docker:build
-task docker:push
-```
+You can deploy the entire application with a single command that will set up all required Azure resources, build and push the Docker image, and deploy the application:
 
-2. Deploy to Azure Container Apps:
-```bash
-task azure:deploy
-```
-
-Or do everything in one command:
 ```bash
 task deploy:all
 ```
 
-### Configuration
+This command will:
+1. Log in to Azure and set up Azure resources:
+   - Create Resource Group
+   - Create Azure Container Registry (ACR)
+   - Log in to ACR
+   - Create Container Apps Environment
 
-Update the following variables in `Taskfile.yml` before deployment:
+2. Build and push the Docker image:
+   - Build image with AMD64 platform support
+   - Tag image for ACR
+   - Push to Azure Container Registry
 
-```yaml
-vars:
-  DOCKER_REGISTRY: your-registry.azurecr.io
-  RESOURCE_GROUP: evidence-service-rg
-  LOCATION: eastus
-  CONTAINER_APP_NAME: evidence-service
-  CONTAINER_APP_ENV: evidence-env
+3. Deploy the application:
+   - Create Container App
+   - Set up external ingress
+   - Configure ACR authentication
+   - Deploy the application
+
+### Clean Up Azure Resources
+
+To remove all Azure resources created for this project:
+
+```bash
+task azure:cleanup
 ```
 
-Also, make sure to set your Azure subscription ID in the `azure:login` task.
+This will:
+1. Show all resources that will be deleted
+2. Ask for confirmation
+3. Delete resources in order:
+   - Container App
+   - Container Apps Environment
+   - Container Registry
+   - Resource Group
+
+### Individual Commands
+
+You can also run each step individually if needed:
+
+```bash
+# Azure Setup
+task azure:login           # Login to Azure
+task azure:create-rg       # Create Resource Group
+task azure:create-acr      # Create Container Registry
+task azure:acr-login       # Login to Container Registry
+task azure:create-env      # Create Container Apps Environment
+
+# Docker Operations
+task docker:build         # Build the container image
+task docker:push          # Push to Container Registry
+
+# Deployment
+task azure:deploy        # Deploy to Container Apps
+```
+
+### Configuration
+
+Update the following variables in `.env` before deployment:
+
+Required variables in `.env`:
+
+```properties
+# Azure Configuration
+AZURE_SUBSCRIPTION_ID=<your-subscription-id>
+AZURE_TENANT_ID=<your-tenant-id>
+AZURE_LOCATION=eastus                  # Azure region to deploy to
+
+# Resource Names
+AZURE_RESOURCE_GROUP=evidence-service-rg    # Name for your resource group
+AZURE_CONTAINER_REGISTRY=evidenceserviceacr # Must be unique across Azure
+CONTAINER_APP_NAME=evidence-service         # Name for your container app
+CONTAINER_APP_ENV=evidence-env             # Name for your container app environment
+
+# Docker Configuration
+DOCKER_IMAGE=evidence-service              # Name of your Docker image
+DOCKER_TAG=latest                         # Tag for your Docker image
+
+# Application Configuration
+PORT=8080                                 # Port your application listens on
+GIN_MODE=release                          # Gin framework mode
+```
+
+Note: The ACR name (`AZURE_CONTAINER_REGISTRY`) must be:
+- Globally unique across Azure
+- 5-50 characters long
+- Contain only lowercase letters and numbers
 
 ## Contributing
 

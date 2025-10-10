@@ -23,8 +23,8 @@ COPY . .
 RUN go mod tidy && \
     /go/bin/swag init
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o evidence-service -ldflags="-w -s" -trimpath
+# Build the application for AMD64 architecture
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o evidence-service -ldflags="-w -s" -trimpath
 
 # Final stage
 FROM alpine:3.18

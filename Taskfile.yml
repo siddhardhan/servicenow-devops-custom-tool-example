@@ -3,7 +3,8 @@ version: '3'
 dotenv: ['.env']
 
 vars:
-  DOCKER_REGISTRY: '{{.DOCKER_REGISTRY}}'
+  AZURE_CONTAINER_REGISTRY: '{{.AZURE_CONTAINER_REGISTRY}}'
+  DOCKER_REGISTRY: '{{.AZURE_CONTAINER_REGISTRY}}.azurecr.io'
   DOCKER_IMAGE: '{{.DOCKER_IMAGE}}'
   DOCKER_TAG: '{{.DOCKER_TAG}}'
   PORT: '{{.PORT}}'
@@ -26,7 +27,7 @@ tasks:
   docker:build:
     desc: Build Docker image
     cmds:
-      - docker build -t {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} .
+      - docker build --platform linux/amd64 -t {{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} .
 
   docker:run:
     desc: Run Docker container in background
@@ -76,22 +77,40 @@ tasks:
   azure:login:
     desc: Login to Azure
     cmds:
-      - az login
-      - az account set --subscription <your-subscription-id>
+      - az login --tenant {{.AZURE_TENANT_ID}}
+      - az account set --subscription {{.AZURE_SUBSCRIPTION_ID}}
 
   azure:acr-login:
     desc: Login to Azure Container Registry
     cmds:
-      - az acr login --name {{.DOCKER_REGISTRY}}
+      - az acr login --name {{.AZURE_CONTAINER_REGISTRY}}
 
   azure:create-rg:
     desc: Create Azure Resource Group
     cmds:
       - az group create --name {{.RESOURCE_GROUP}} --location {{.LOCATION}}
 
+  azure:create-acr:
+    desc: Create Azure Container Registry if it doesn't exist
+    cmds:
+      - |
+        echo "Creating ACR {{.AZURE_CONTAINER_REGISTRY}} in resource group {{.RESOURCE_GROUP}}..."
+        az acr create \
+        --resource-group {{.RESOURCE_GROUP}} \
+        --name {{.AZURE_CONTAINER_REGISTRY}} \
+        --sku Basic \
+        --admin-enabled true
+
+  azure:get-acr-creds:
+    desc: Get Azure Container Registry credentials
+    cmds:
+      - az acr credential show
+        --name {{.AZURE_CONTAINER_REGISTRY}}
+        --resource-group {{.RESOURCE_GROUP}}
+
   azure:create-env:
     desc: Create Azure Container Apps Environment
-    deps: [azure:create-rg]
+    deps: [azure:create-rg, azure:create-acr]
     cmds:
       - az containerapp env create
         --name {{.CONTAINER_APP_ENV}}
@@ -102,21 +121,144 @@ tasks:
     desc: Deploy to Azure Container Apps
     deps: [docker:push]
     cmds:
-      - az containerapp create
-        --name {{.CONTAINER_APP_NAME}}
-        --resource-group {{.RESOURCE_GROUP}}
-        --environment {{.CONTAINER_APP_ENV}}
-        --image {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
-        --target-port {{.PORT}}
-        --ingress external
-        --query properties.configuration.ingress.fqdn
+      - |
+        echo "Validating environment variables..."
+        if [ -z "{{.RESOURCE_GROUP}}" ]; then
+          echo "Error: AZURE_RESOURCE_GROUP is not set in .env"
+          exit 1
+        fi
+        if [ -z "{{.AZURE_CONTAINER_REGISTRY}}" ]; then
+          echo "Error: AZURE_CONTAINER_REGISTRY is not set in .env"
+          exit 1
+        fi
+        if [ -z "{{.CONTAINER_APP_ENV}}" ]; then
+          echo "Error: CONTAINER_APP_ENV is not set in .env"
+          exit 1
+        fi
+        if [ -z "{{.CONTAINER_APP_NAME}}" ]; then
+          echo "Error: CONTAINER_APP_NAME is not set in .env"
+          exit 1
+        fi
+        
+        echo "Checking Azure login status..."
+        if ! az account show &>/dev/null; then
+          echo "Error: Not logged into Azure. Run 'task azure:login' first"
+          exit 1
+        fi
+        
+        echo "Checking Container Apps environment..."
+        if ! az containerapp env show --name {{.CONTAINER_APP_ENV}} --resource-group {{.RESOURCE_GROUP}} &>/dev/null; then
+          echo "Error: Container Apps environment '{{.CONTAINER_APP_ENV}}' not found."
+          echo "Creating environment first..."
+          az containerapp env create \
+            --name {{.CONTAINER_APP_ENV}} \
+            --resource-group {{.RESOURCE_GROUP}} \
+            --location {{.LOCATION}}
+        fi
+
+        echo "Getting ACR credentials..."
+        echo "Registry: {{.AZURE_CONTAINER_REGISTRY}}"
+        echo "Resource Group: {{.RESOURCE_GROUP}}"
+        
+        CREDS=$(az acr credential show --name {{.AZURE_CONTAINER_REGISTRY}} --resource-group {{.RESOURCE_GROUP}} --debug)
+        if [ $? -ne 0 ]; then
+          echo "Error: Could not get ACR credentials. Full error:"
+          echo "$CREDS"
+          echo "Ensure ACR exists and has admin enabled."
+          echo "Try running 'task azure:create-acr' first"
+          exit 1
+        fi
+        
+        USERNAME=$(echo $CREDS | jq -r .username)
+        PASSWORD=$(echo $CREDS | jq -r '.passwords[0].value')
+        
+        echo "Verifying image exists in ACR..."
+        if ! az acr repository show-tags \
+          --name {{.AZURE_CONTAINER_REGISTRY}} \
+          --repository {{.DOCKER_IMAGE}} \
+          --query "[?@=='{{.DOCKER_TAG}}']" \
+          --output tsv &>/dev/null; then
+            echo "Error: Image {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} not found in ACR"
+            echo "Please ensure the image was pushed successfully"
+            echo "Running 'docker push' again..."
+            docker push {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
+        fi
+        
+        echo "Deploying Container App..."
+        az containerapp create \
+          --name {{.CONTAINER_APP_NAME}} \
+          --resource-group {{.RESOURCE_GROUP}} \
+          --environment {{.CONTAINER_APP_ENV}} \
+          --image {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}} \
+          --registry-server {{.DOCKER_REGISTRY}} \
+          --registry-username "$USERNAME" \
+          --registry-password "$PASSWORD" \
+          --target-port {{.PORT}} \
+          --ingress external \
+          --query properties.configuration.ingress.fqdn
 
   deploy:all:
     desc: Build, push and deploy to Azure
+    deps:
+      # - azure:login
+      # - azure:create-rg
+      # - azure:create-acr
+      # - azure:acr-login
+      # - azure:create-env
+      - docker:build
+      - docker:push
+      - azure:deploy
     cmds:
-      - task: docker:build
-      - task: docker:push
-      - task: azure:deploy
+      - echo "Deployment completed successfully!"
+
+  azure:cleanup:
+    desc: Clean up all Azure resources
+    cmds:
+      - |
+        echo "Warning: This will delete all Azure resources for this project!"
+        echo "Resource Group: {{.RESOURCE_GROUP}}"
+        echo "Container App: {{.CONTAINER_APP_NAME}}"
+        echo "Container Registry: {{.AZURE_CONTAINER_REGISTRY}}"
+        echo "Environment: {{.CONTAINER_APP_ENV}}"
+        
+        # Ask for confirmation
+        echo -n "Are you sure you want to continue? (y/N): "
+        read answer
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+          echo "Cleanup cancelled."
+          exit 1
+        fi
+        
+        echo "Starting cleanup..."
+        
+        # Delete Container App
+        echo "Deleting Container App..."
+        az containerapp delete \
+          --name {{.CONTAINER_APP_NAME}} \
+          --resource-group {{.RESOURCE_GROUP}} \
+          --yes || true
+        
+        # Delete Container Apps Environment
+        echo "Deleting Container Apps Environment..."
+        az containerapp env delete \
+          --name {{.CONTAINER_APP_ENV}} \
+          --resource-group {{.RESOURCE_GROUP}} \
+          --yes || true
+        
+        # Delete Container Registry
+        echo "Deleting Container Registry..."
+        az acr delete \
+          --name {{.AZURE_CONTAINER_REGISTRY}} \
+          --resource-group {{.RESOURCE_GROUP}} \
+          --yes || true
+        
+        # Delete Resource Group
+        echo "Deleting Resource Group..."
+        az group delete \
+          --name {{.RESOURCE_GROUP}} \
+          --yes || true
+        
+        echo "Cleanup complete!"
 
   build:all:
     desc: Build and run Docker container locally
