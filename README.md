@@ -12,7 +12,7 @@ A microservice that provides evidence information based on control IDs. Built wi
 - RESTful API endpoint `/v1/evidences`
 - Query evidences by control ID (1234 for DataDog, 5678 for Sonar)
 - Returns 10-26 evidences per request
-- Unique appIDs (A through Z) for each evidence
+- Unique appIDs for each evidence (e.g., "Corpsite", "Cruz Bike Rentals", etc.)
 - Evidence type based on control ID:
   - controlId 1234: DataDog evidences
   - controlId 5678: Sonar evidences
@@ -132,7 +132,7 @@ task docker:clean
 
 **Response Details:**
 - Returns between 10 and 26 evidences per request
-- Each evidence has a unique appID (A through Z)
+- Each evidence has a unique appID representing a specific service (e.g., "Corpsite", "Cruz Bike Rentals")
 - Evidence type is determined by controlId
 - Evidence status is randomly either "SUCCESS" or "FAILED"
 - Each evidence has a unique 32-character sysID with "sys_" prefix
@@ -150,14 +150,14 @@ curl "http://localhost:8080/v1/evidences?controlId=1234"
     "evidenceType": "dataDog",
     "controlId": "1234",
     "evidenceStatus": "SUCCESS",
-    "appId": "A"
+    "appId": "Corpsite"
   },
   {
     "evidenceId": "sys_0987654321fedcba0123456789abcdef",
     "evidenceType": "dataDog",
     "controlId": "1234",
     "evidenceStatus": "FAILED",
-    "appId": "B"
+    "appId": "Cruz Bike Rentals"
   }
 ]
 ```
@@ -175,14 +175,14 @@ curl "http://localhost:8080/v1/evidences?controlId=5678"
     "evidenceType": "sonar",
     "controlId": "5678",
     "evidenceStatus": "SUCCESS",
-    "appId": "X"
+    "appId": "Hotel Reservation System"
   },
   {
     "evidenceId": "sys_fedcba0987654321abcdef1234567890",
     "evidenceType": "sonar",
     "controlId": "5678",
     "evidenceStatus": "FAILED",
-    "appId": "Y"
+    "appId": "Portfolio"
   }
 ]
 ```
@@ -204,16 +204,32 @@ evidence-service/
 
 ### Available Tasks
 
+Development:
 - `task build` - Build the Go application locally
 - `task test` - Run tests
-- `task dev` - Run the application locally
-- `task docker:build` - Build Docker image
+- `task dev` - Run the application locally for development
+
+Docker Operations:
+- `task docker:build` - Build Docker image with AMD64 platform support
+- `task docker:tag` - Tag Docker image for registry
+- `task docker:push` - Push Docker image to registry
 - `task docker:run` - Run Docker container in background
-- `task docker:stop` - Stop Docker container
+- `task docker:stop` - Stop and remove container
 - `task docker:logs` - View container logs
 - `task docker:status` - Check container status
 - `task docker:clean` - Remove Docker image
-- `task all` - Build and run Docker container
+- `task build:all` - Build and run Docker container locally with logs
+
+Azure Operations:
+- `task azure:login` - Login to Azure
+- `task azure:acr-login` - Login to Azure Container Registry
+- `task azure:create-rg` - Create Azure Resource Group
+- `task azure:create-acr` - Create Azure Container Registry
+- `task azure:get-acr-creds` - Get ACR credentials
+- `task azure:create-env` - Create Container Apps Environment
+- `task azure:deploy` - Deploy to Azure Container Apps
+- `task deploy:all` - Build, push and deploy to Azure (full deployment)
+- `task azure:cleanup` - Clean up all Azure resources
 
 ### Environment Variables
 

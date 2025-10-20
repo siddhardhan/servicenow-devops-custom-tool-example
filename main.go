@@ -47,7 +47,7 @@ type Evidence struct {
     EvidenceType   string `json:"evidenceType" example:"dataDog" enums:"dataDog,sonar"`
     ControlID      string `json:"controlId" example:"1234" enums:"1234,5678"`
     EvidenceStatus string `json:"evidenceStatus" example:"SUCCESS" enums:"SUCCESS,FAILED"`
-    AppID          string `json:"appId" example:"A"`
+    AppID          string `json:"appId" example:"Corpsite"`
 }
 
 // EvidenceTemplate represents the structure of our mock data
@@ -86,10 +86,14 @@ func getEvidencesHandler(c *gin.Context) {
     // Generate a random number of evidences (10-26)
     numEvidences := rand.Intn(17) + 10  // 17 is the range (26-10+1), 10 is the minimum
 
-    // Generate appIDs from A to Z
-    appIDs := make([]string, 26)
-    for i := 0; i < 26; i++ {
-        appIDs[i] = string(rune('A' + i))
+    // Define specific AppIDs
+    appIDs := []string{
+        "Corpsite",
+        "Cruz Bike Rentals",
+        "Hotel Reservation System",
+        "Portfolio",
+        "Product - Corpsite & Cruz",
+        "Smart Shopper",
     }
     // Shuffle the appIDs to ensure random but unique assignment
     rand.Shuffle(len(appIDs), func(i, j int) {
