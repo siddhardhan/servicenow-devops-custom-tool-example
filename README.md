@@ -10,12 +10,14 @@ A microservice that provides evidence information based on control IDs. Built wi
 ## Features
 
 - RESTful API endpoint `/v1/evidences`
-- Query evidences by control ID (1234 for DataDog, 5678 for Sonar)
+- Query evidences by control ID (1234 for datadog, 5678 for sonar, 9012 for gitlab, 3456 for practitest)
 - Returns 10-26 evidences per request
 - Unique appIDs for each evidence (e.g., "Corpsite", "Cruz Bike Rentals", etc.)
 - Evidence type based on control ID:
-  - controlId 1234: DataDog evidences
-  - controlId 5678: Sonar evidences
+  - controlId 1234: datadog evidences
+  - controlId 5678: sonar evidences
+  - controlId 9012: gitlab evidences
+  - controlId 3456: practitest evidences
 - Random SUCCESS/FAILED status for each evidence
 - Randomly generated 32-character system IDs
 - Docker support
@@ -127,8 +129,10 @@ task docker:clean
 
 **Query Parameters:**
 - `controlId` (required): The ID of the control to fetch evidences for
-  - Use "1234" for DataDog evidences
-  - Use "5678" for Sonar evidences
+  - Use "1234" for datadog evidences
+  - Use "5678" for sonar evidences
+  - Use "9012" for gitlab evidences
+  - Use "3456" for practitest evidences
 
 **Response Details:**
 - Returns between 10 and 26 evidences per request
@@ -137,24 +141,24 @@ task docker:clean
 - Evidence status is randomly either "SUCCESS" or "FAILED"
 - Each evidence has a unique 32-character sysID with "sys_" prefix
 
-**Example Request for DataDog:**
+**Example Request for datadog:**
 ```bash
 curl "http://localhost:8080/v1/evidences?controlId=1234"
 ```
 
-**Example Response for DataDog:**
+**Example Response for datadog:**
 ```json
 [
   {
     "evidenceId": "sys_1a2b3c4d5e6f7890abcdef0123456789",
-    "evidenceType": "dataDog",
+    "evidenceType": "datadog",
     "controlId": "1234",
     "evidenceStatus": "SUCCESS",
     "appId": "Corpsite"
   },
   {
     "evidenceId": "sys_0987654321fedcba0123456789abcdef",
-    "evidenceType": "dataDog",
+    "evidenceType": "datadog",
     "controlId": "1234",
     "evidenceStatus": "FAILED",
     "appId": "Cruz Bike Rentals"
@@ -184,6 +188,55 @@ curl "http://localhost:8080/v1/evidences?controlId=5678"
     "evidenceStatus": "FAILED",
     "appId": "Portfolio"
   }
+]
+```
+
+## Get Evidences by App ID
+
+**Endpoint:** `GET /v1/evidences/by-app`
+
+**Query Parameters:**
+- `app_id` (required): The application identifier. Supported values:
+  - `Hogan` — returns 2 evidences (both SUCCESS)
+  - `SinglePoint` — returns 4 evidences (one FAILED — the 3rd)
+
+**Example Request (Hogan):**
+```bash
+curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan"
+```
+
+**Example Response (Hogan):**
+```json
+[
+  {
+    "evidenceId": "sys_abcdef1234567890abcdef1234567890",
+    "evidenceType": "datadog",
+    "controlId": "1234",
+    "evidenceStatus": "SUCCESS",
+    "appId": "Hogan"
+  },
+  {
+    "evidenceId": "sys_0123456789abcdef0123456789abcdef",
+    "evidenceType": "sonar",
+    "controlId": "5678",
+    "evidenceStatus": "SUCCESS",
+    "appId": "Hogan"
+  }
+]
+```
+
+**Example Request (SinglePoint):**
+```bash
+curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint"
+```
+
+**Example Response (SinglePoint):**
+```json
+[
+  { "evidenceId": "sys_a1b2c3d4e5f60123456789abcdefabcd", "evidenceType": "datadog", "controlId": "1234", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" },
+  { "evidenceId": "sys_b1c2d3e4f5a60123456789abcdefabcd", "evidenceType": "sonar",   "controlId": "5678", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" },
+  { "evidenceId": "sys_c1d2e3f4a5b60123456789abcdefabcd", "evidenceType": "gitlab",  "controlId": "9012", "evidenceStatus": "FAILED",  "appId": "SinglePoint" },
+  { "evidenceId": "sys_d1e2f3a4b5c60123456789abcdefabcd", "evidenceType": "practitest","controlId": "3456", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" }
 ]
 ```
 
