@@ -199,10 +199,17 @@ curl "http://localhost:8080/v1/evidences?controlId=5678"
 - `app_id` (required): The application identifier. Supported values:
   - `Hogan` — returns 2 evidences (both SUCCESS)
   - `SinglePoint` — returns 4 evidences (one FAILED — the 3rd)
+- `controlIds` (required): Comma-separated list of control IDs to include. Example: `1234,5678`.
+- `version` (optional): Optional version string to include in the evidence objects (e.g. `v1.2.3`).
+
+Version-specific behavior
+- If no `version` is provided, the endpoint will return all evidences with `evidenceStatus: "SUCCESS"`.
+- If `version=R22-2.0`, the endpoint forces all returned evidences to `evidenceStatus: "SUCCESS"`.
+- If `version=R22-1.0`, the endpoint guarantees at least one returned evidence has `evidenceStatus: "FAILED"` (if none are failed, the first evidence will be marked FAILED).
 
 **Example Request (Hogan):**
 ```bash
-curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan"
+curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan&controlIds=1234,5678"
 ```
 
 **Example Response (Hogan):**
@@ -227,7 +234,7 @@ curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan"
 
 **Example Request (SinglePoint):**
 ```bash
-curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint"
+curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint&controlIds=1234,5678,9012,3456&version=v1.2.3"
 ```
 
 **Example Response (SinglePoint):**
@@ -280,8 +287,16 @@ Azure Operations:
 - `task azure:create-acr` - Create Azure Container Registry
 - `task azure:get-acr-creds` - Get ACR credentials
 - `task azure:create-env` - Create Container Apps Environment
-- `task azure:deploy` - Deploy to Azure Container Apps
-- `task deploy:all` - Build, push and deploy to Azure (full deployment)
+- `task azure:deploy` - Deploy to Azure Container Apps (low-level create/update)
+- `task deploy:prepare` - Validate environment and prerequisites (runs `scripts/validate_env.sh`)
+- `task deploy:infra` - Ensure resource group, ACR and Container Apps env (idempotent)
+- `task deploy:auth` - Authenticate to Azure and ACR (`azure:login` + `azure:acr-login`)
+- `task deploy:build` - Run local build and tests
+- `task deploy:image` - Build Docker image
+- `task deploy:publish` - Tag and push image to ACR
+- `task deploy:app` - Create / update Container App (wraps `azure:deploy`)
+- `task deploy:verify` - Run smoke tests against deployed app (`scripts/smoke_test.sh`)
+- `task deploy:all` - Orchestrated deploy (prepare -> infra -> auth -> build -> image -> publish -> app -> verify)
 - `task azure:cleanup` - Clean up all Azure resources
 
 ### Environment Variables
@@ -354,29 +369,32 @@ The deployment process will automatically handle ACR authentication using admin 
 
 ### Deploy to Azure
 
-You can deploy the entire application with a single command that will set up all required Azure resources, build and push the Docker image, and deploy the application:
+You can deploy the application using a modular flow. `task deploy:all` still exists but now orchestrates a set of smaller tasks. This gives you the ability to re-run a specific stage if it fails.
+
+Run the full orchestrated deploy:
 
 ```bash
 task deploy:all
 ```
 
-This command will:
-1. Log in to Azure and set up Azure resources:
-   - Create Resource Group
-   - Create Azure Container Registry (ACR)
-   - Log in to ACR
-   - Create Container Apps Environment
+Or run stages individually when troubleshooting:
 
-2. Build and push the Docker image:
-   - Build image with AMD64 platform support
-   - Tag image for ACR
-   - Push to Azure Container Registry
+- `task deploy:prepare` — validate environment and prerequisites (`scripts/validate_env.sh`)
+- `task deploy:infra` — ensure Resource Group, ACR and Container Apps Environment (idempotent)
+- `task deploy:auth` — authenticate to Azure and ACR
+- `task deploy:build` — run unit tests and build the binary
+- `task deploy:image` — build the Docker image
+- `task deploy:publish` — tag and push the image to ACR
+- `task deploy:app` — create or update the Container App
+- `task deploy:verify` — run smoke tests against the live app (`scripts/smoke_test.sh`)
 
-3. Deploy the application:
-   - Create Container App
-   - Set up external ingress
-   - Configure ACR authentication
-   - Deploy the application
+Why this helps:
+
+- Easier debugging: re-run only the failing stage (for example `task deploy:publish`) instead of repeating the full flow.
+- Safer infra changes: `deploy:infra` is idempotent and will not recreate resources unnecessarily.
+- Better CI mapping: each stage can be a separate CI job (lint/test/build/publish/deploy/verify).
+
+If you prefer the old one-shot behavior, `task deploy:all` will run the full orchestrated flow.
 
 ### Clean Up Azure Resources
 
@@ -410,6 +428,16 @@ task azure:create-env      # Create Container Apps Environment
 # Docker Operations
 task docker:build         # Build the container image
 task docker:push          # Push to Container Registry
+
+# Deploy helper tasks (new, modular)
+task deploy:prepare      # Validate env and prerequisites
+task deploy:infra        # Ensure RG/ACR/Container Apps env
+task deploy:auth         # Azure + ACR login
+task deploy:build        # Run build and tests
+task deploy:image        # Build Docker image
+task deploy:publish      # Tag and push image
+task deploy:app          # Create/update Container App
+task deploy:verify       # Run smoke tests against deployed app
 
 # Deployment
 task azure:deploy        # Deploy to Container Apps
