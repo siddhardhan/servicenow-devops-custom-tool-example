@@ -6,6 +6,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +54,7 @@ type Evidence struct {
 	ControlID      string `json:"controlId" example:"1234" enums:"1234,5678"`
 	EvidenceStatus string `json:"evidenceStatus" example:"SUCCESS" enums:"SUCCESS,FAILED"`
 	AppID          string `json:"appId" example:"Corpsite"`
+	Version        string `json:"version,omitempty" example:"v1.2.3"`
 }
 
 // EvidenceTemplate represents the structure of our mock data
@@ -67,6 +69,7 @@ var evidenceTemplates = []EvidenceTemplate{
 	{EvidenceType: "sonar", ControlID: "5678"},
 	{EvidenceType: "gitlab", ControlID: "9012"},
 	{EvidenceType: "practitest", ControlID: "3456"},
+	{EvidenceType: "nonfunctional", ControlID: "2314"},
 }
 
 // @Summary Get evidences by control ID
@@ -178,11 +181,13 @@ func getEvidencesHandler(c *gin.Context) {
 }
 
 // @Summary Get evidences by app ID
-// @Description Returns a fixed set of evidences for a given app_id. Supports "Hogan" and "SinglePoint".
+// @Description Returns a set of evidences for a given app_id. Supports "Hogan" and "SinglePoint".
 // @Tags evidence
 // @Accept json
 // @Produce json
 // @Param app_id query string true "App ID (Hogan or SinglePoint)"
+// @Param controlIds query string true "Comma-separated list of control IDs to include (e.g. 1234,5678)"
+// @Param version query string false "Optional version string to include in the evidence (e.g. v1.2.3)"
 // @Success 200 {array} Evidence
 // @Failure 400 {object} ErrorResponse
 // @Router /evidences/by-app [get]
@@ -196,6 +201,20 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	// New: controlIds is a mandatory, comma-separated list of control IDs to include
+	controlIdsParam := c.Query("controlIds")
+	if controlIdsParam == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Status:  http.StatusBadRequest,
+			Message: "controlIds is required (comma-separated list)",
+			Code:    "MISSING_CONTROL_IDS",
+		})
+		return
+	}
+
+	// Optional version parameter: will be echoed into the returned Evidence objects
+	versionParam := c.Query("version")
 
 	var evidences []Evidence
 
@@ -212,27 +231,47 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 		return
 	}
 
-	// Build unique (ControlID, EvidenceType) pairs. If templates are exhausted
-	// create deterministic variations to ensure uniqueness up to desiredCount.
+	// Parse requested control IDs and filter templates accordingly
+	requested := make(map[string]bool)
+	for _, id := range strings.Split(controlIdsParam, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			requested[id] = true
+		}
+	}
+
+	// Build a filtered list of templates matching requested control IDs
+	var matchingTemplatesFiltered []EvidenceTemplate
+	for _, t := range evidenceTemplates {
+		if requested[t.ControlID] {
+			matchingTemplatesFiltered = append(matchingTemplatesFiltered, t)
+		}
+	}
+
+	if len(matchingTemplatesFiltered) == 0 {
+		// nothing to build
+		c.JSON(http.StatusOK, []Evidence{})
+		return
+	}
+
+	// Build unique (ControlID, EvidenceType) pairs from the filtered templates
 	seen := make(map[string]bool)
 	idx := 0
 	for len(evidences) < desiredCount {
-		base := evidenceTemplates[idx%len(evidenceTemplates)]
+		base := matchingTemplatesFiltered[idx%len(matchingTemplatesFiltered)]
 		pairKey := base.ControlID + "|" + base.EvidenceType
 
 		tpl := base
-		// We now have four allowed templates (dataDog, sonar, gitlab, practitest).
-		// Use the next template when available to ensure unique (ControlID, EvidenceType)
-		// pairs. Since desiredCount for current callers is <= 4, this will be enough
-		// to produce unique entries without creating synthetic types.
 		if seen[pairKey] {
-			// pick next template in sequence to avoid repeating the same pair
-			next := evidenceTemplates[(idx+1)%len(evidenceTemplates)]
+			// try the next template in the filtered list
+			next := matchingTemplatesFiltered[(idx+1)%len(matchingTemplatesFiltered)]
 			tpl = next
 			pairKey = tpl.ControlID + "|" + tpl.EvidenceType
 			if seen[pairKey] {
-				// fallback: continue to next idx iteration
 				idx++
+				if idx > desiredCount*10 {
+					break
+				}
 				continue
 			}
 		}
@@ -240,23 +279,53 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 		seen[pairKey] = true
 
 		status := "SUCCESS"
-		// For SinglePoint, make the 3rd evidence FAILED to match requirement
 		if appID == "SinglePoint" && len(evidences) == 2 {
 			status = "FAILED"
 		}
 
-		evidences = append(evidences, Evidence{
+		ev := Evidence{
 			EvidenceID:     generateSysID(),
 			EvidenceType:   tpl.EvidenceType,
 			ControlID:      tpl.ControlID,
 			EvidenceStatus: status,
 			AppID:          appID,
-		})
+		}
+		if versionParam != "" {
+			ev.Version = versionParam
+		}
+
+		evidences = append(evidences, ev)
 
 		idx++
-		// Safety: avoid infinite loop (shouldn't happen)
 		if idx > desiredCount*10 {
 			break
+		}
+	}
+
+	// Version-specific overrides
+	switch versionParam {
+	case "R22-2.0":
+		// Force all evidences to SUCCESS for this version
+		for i := range evidences {
+			evidences[i].EvidenceStatus = "SUCCESS"
+		}
+	case "R22-1.0":
+		// Ensure at least one FAILED evidence exists for the requested control IDs
+		hasFailed := false
+		for _, ev := range evidences {
+			if ev.EvidenceStatus == "FAILED" {
+				hasFailed = true
+				break
+			}
+		}
+		if !hasFailed && len(evidences) > 0 {
+			// If none failed yet, mark the first evidence as FAILED to satisfy requirement
+			evidences[0].EvidenceStatus = "FAILED"
+		}
+	case "":
+		// No version provided: make all evidences SUCCESS
+		for i := range evidences {
+			evidences[i].EvidenceStatus = "SUCCESS"
 		}
 	}
 
