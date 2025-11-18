@@ -22,7 +22,7 @@ func TestGetEvidencesByAppID_Hogan(t *testing.T) {
 	r := setupRouter()
 	w := httptest.NewRecorder()
 	// include controlIds as required by the handler
-	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=Hogan&controlIds=1234,5678", nil)
+	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=Hogan&control_ids=1234,5678", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != 200 {
@@ -56,7 +56,7 @@ func TestGetEvidencesByAppID_SinglePoint(t *testing.T) {
 	r := setupRouter()
 	w := httptest.NewRecorder()
 	// include all controlIds to allow up to 4 evidences
-	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&controlIds=1234,5678,9012,3456", nil)
+	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&control_ids=1234,5678,9012,3456", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != 200 {
@@ -93,7 +93,7 @@ func TestGetEvidencesByAppID_SinglePoint(t *testing.T) {
 func TestVersion_R22_2_0_AllSuccess(t *testing.T) {
 	r := setupRouter()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&controlIds=1234,5678,9012,3456&version=R22-2.0", nil)
+	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&control_ids=1234,5678,9012,3456&version=R22-2.0", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != 200 {
@@ -119,7 +119,7 @@ func TestVersion_R22_2_0_AllSuccess(t *testing.T) {
 func TestVersion_R22_1_0_AtLeastOneFailed(t *testing.T) {
 	r := setupRouter()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&controlIds=1234,5678,9012,3456&version=R22-1.0", nil)
+	req := httptest.NewRequest("GET", "/v1/evidences/by-app?app_id=SinglePoint&control_ids=1234,5678,9012,3456&version=R22-1.0", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != 200 {

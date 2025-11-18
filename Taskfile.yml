@@ -197,54 +197,54 @@ tasks:
           --ingress external \
           --query properties.configuration.ingress.fqdn
 
-    deploy:prepare:
-      desc: Validate environment and prerequisites for deployment
-      cmds:
-        - ./scripts/validate_env.sh
+  deploy:prepare:
+    desc: Validate environment and prerequisites for deployment
+    cmds:
+      - ./scripts/validate_env.sh
 
-    deploy:infra:
-      desc: Ensure required Azure infra exists (idempotent)
-      deps: [azure:create-rg, azure:create-acr, azure:create-env]
-      cmds:
-        - echo "Infra tasks completed (rg/acr/env ensured)"
+  deploy:infra:
+    desc: Ensure required Azure infra exists (idempotent)
+    deps: [azure:create-rg, azure:create-acr, azure:create-env]
+    cmds:
+      - echo "Infra tasks completed (rg/acr/env ensured)"
 
-    deploy:auth:
-      desc: Authenticate to Azure and ACR
-      cmds:
-        - task: azure:login
-        - task: azure:acr-login
+  deploy:auth:
+    desc: Authenticate to Azure and ACR
+    cmds:
+      - task: azure:login
+      - task: azure:acr-login
 
-    deploy:build:
-      desc: Run build and tests before creating image
-      deps: [build, test]
-      cmds:
-        - echo "Build and tests passed"
+  deploy:build:
+    desc: Run build and tests before creating image
+    deps: [build, test]
+    cmds:
+      - echo "Build and tests passed"
 
-    deploy:image:
-      desc: Build Docker image for deployment
-      deps: [docker:build]
-      cmds:
-        - echo "Docker image built"
+  deploy:image:
+    desc: Build Docker image for deployment
+    deps: [docker:build]
+    cmds:
+      - echo "Docker image built"
 
-    deploy:publish:
-      desc: Tag and push image to ACR (with retries recommended)
-      deps: [docker:tag, docker:push]
-      cmds:
-        - echo "Image published to {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}"
+  deploy:publish:
+    desc: Tag and push image to ACR (with retries recommended)
+    deps: [docker:tag, docker:push]
+    cmds:
+      - echo "Image published to {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}"
 
-    deploy:app:
-      desc: Create or update the Container App (consumes published image)
-      deps: [deploy:publish]
-      cmds:
-        - task: azure:deploy
+  deploy:app:
+    desc: Create or update the Container App (consumes published image)
+    deps: [deploy:publish]
+    cmds:
+      - task: azure:deploy
 
-    deploy:verify:
-      desc: Run smoke tests against the deployed app
-      cmds:
-        - ./scripts/smoke_test.sh
+  deploy:verify:
+    desc: Run smoke tests against the deployed app
+    cmds:
+      - ./scripts/smoke_test.sh
 
   deploy:all:
-    desc: Orchestrated deploy: prepare -> infra -> auth -> build -> image -> publish -> app -> verify
+    desc: Orchestrated deploy prepare -> infra -> auth -> build -> image -> publish -> app -> verify
     deps:
       - deploy:prepare
       - deploy:infra

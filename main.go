@@ -77,20 +77,29 @@ var evidenceTemplates = []EvidenceTemplate{
 // @Tags evidence
 // @Accept json
 // @Produce json
-// @Param controlId query string true "Control ID (1234 for datadog, 5678 for Sonar)"
+// @Param control_ids query string true "Control ID(s). Accepts a single ID or a comma-separated list (e.g. 1234 or 1234,5678)"
 // @Success 200 {array} Evidence
 // @Failure 400 {object} ErrorResponse
 // @Router /evidences [get]
 func getEvidencesHandler(c *gin.Context) {
 	// Get the controlId from query parameters
-	controlID := c.Query("controlId")
-	if controlID == "" {
+	controlIDsParam := c.Query("control_ids")
+	if controlIDsParam == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Status:  http.StatusBadRequest,
-			Message: "Control ID is required",
+			Message: "control_ids is required (single or comma-separated list)",
 			Code:    "MISSING_CONTROL_ID",
 		})
 		return
+	}
+
+	// support comma-separated control IDs
+	requested := make(map[string]bool)
+	for _, id := range strings.Split(controlIDsParam, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			requested[id] = true
+		}
 	}
 
 	// Generate a random number of evidences (10-26)
@@ -110,10 +119,10 @@ func getEvidencesHandler(c *gin.Context) {
 		appIDs[i], appIDs[j] = appIDs[j], appIDs[i]
 	})
 
-	// Filter templates by controlId
+	// Filter templates by requested control IDs
 	var matchingTemplates []EvidenceTemplate
 	for _, template := range evidenceTemplates {
-		if template.ControlID == controlID {
+		if requested[template.ControlID] {
 			matchingTemplates = append(matchingTemplates, template)
 		}
 	}
@@ -186,7 +195,7 @@ func getEvidencesHandler(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param app_id query string true "App ID (Hogan or SinglePoint)"
-// @Param controlIds query string true "Comma-separated list of control IDs to include (e.g. 1234,5678)"
+// @Param control_ids query string true "Comma-separated list of control IDs to include (e.g. 1234,5678)"
 // @Param version query string false "Optional version string to include in the evidence (e.g. v1.2.3)"
 // @Success 200 {array} Evidence
 // @Failure 400 {object} ErrorResponse
@@ -203,11 +212,11 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 	}
 
 	// New: controlIds is a mandatory, comma-separated list of control IDs to include
-	controlIdsParam := c.Query("controlIds")
+	controlIdsParam := c.Query("control_ids")
 	if controlIdsParam == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Status:  http.StatusBadRequest,
-			Message: "controlIds is required (comma-separated list)",
+			Message: "control_ids is required (comma-separated list)",
 			Code:    "MISSING_CONTROL_IDS",
 		})
 		return
