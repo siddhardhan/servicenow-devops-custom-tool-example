@@ -22,7 +22,7 @@ tasks:
   test:
     desc: Run tests
     cmds:
-      - go test -v ./...
+      - go test -v .
 
   docker:build:
     desc: Build Docker image
@@ -70,7 +70,6 @@ tasks:
 
   docker:push:
     desc: Push Docker image to registry
-    deps: [docker:tag]
     cmds:
       - ./scripts/retry.sh 3 2 docker push {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}
 
@@ -110,7 +109,6 @@ tasks:
 
   azure:create-env:
     desc: Create Azure Container Apps Environment
-    deps: [azure:create-rg, azure:create-acr]
     cmds:
       - az containerapp env create
         --name {{.CONTAINER_APP_ENV}}
@@ -119,7 +117,6 @@ tasks:
 
   azure:deploy:
     desc: Deploy to Azure Container Apps
-    deps: [docker:push]
     cmds:
       - |
         echo "Validating environment variables..."
@@ -204,8 +201,10 @@ tasks:
 
   deploy:infra:
     desc: Ensure required Azure infra exists (idempotent)
-    deps: [azure:create-rg, azure:create-acr, azure:create-env]
     cmds:
+      - task: azure:create-rg
+      - task: azure:create-acr
+      - task: azure:create-env
       - echo "Infra tasks completed (rg/acr/env ensured)"
 
   deploy:auth:
@@ -216,25 +215,26 @@ tasks:
 
   deploy:build:
     desc: Run build and tests before creating image
-    deps: [build, test]
     cmds:
+      - task: build
+      - task: test
       - echo "Build and tests passed"
 
   deploy:image:
     desc: Build Docker image for deployment
-    deps: [docker:build]
     cmds:
+      - task: docker:build
       - echo "Docker image built"
 
   deploy:publish:
     desc: Tag and push image to ACR (with retries recommended)
-    deps: [docker:tag, docker:push]
     cmds:
+      - task: docker:tag
+      - task: docker:push
       - echo "Image published to {{.DOCKER_REGISTRY}}/{{.DOCKER_IMAGE}}:{{.DOCKER_TAG}}"
 
   deploy:app:
     desc: Create or update the Container App (consumes published image)
-    deps: [deploy:publish]
     cmds:
       - task: azure:deploy
 
@@ -244,18 +244,17 @@ tasks:
       - ./scripts/smoke_test.sh
 
   deploy:all:
-    desc: Orchestrated deploy prepare -> infra -> auth -> build -> image -> publish -> app -> verify
-    deps:
-      - deploy:prepare
-      - deploy:infra
-      - deploy:auth
-      - deploy:build
-      - deploy:image
-      - deploy:publish
-      - deploy:app
-      - deploy:verify
+    desc: Orchestrated deploy - runs all steps sequentially (prepare -> infra -> auth -> build -> image -> publish -> app -> verify)
     cmds:
-      - echo "Orchestrated deployment completed successfully!"
+      - task: deploy:prepare
+      - task: deploy:infra
+      - task: deploy:auth
+      - task: deploy:build
+      - task: deploy:image
+      - task: deploy:publish
+      - task: deploy:app
+      - task: deploy:verify
+      - echo "Deployment completed successfully!"
 
   azure:cleanup:
     desc: Clean up all Azure resources

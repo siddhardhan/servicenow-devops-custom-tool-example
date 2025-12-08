@@ -57,19 +57,16 @@ type Evidence struct {
 	Version        string `json:"version,omitempty" example:"v1.2.3"`
 }
 
-// EvidenceTemplate represents the structure of our mock data
-type EvidenceTemplate struct {
-	EvidenceType string
-	ControlID    string
-}
+// Allowed evidence types
+var allowedEvidenceTypes = []string{"datadog", "sonar", "gitlab", "practitest"}
 
-// For demonstration, we'll use these templates to generate fresh evidences
-var evidenceTemplates = []EvidenceTemplate{
-	{EvidenceType: "datadog", ControlID: "1234"},
-	{EvidenceType: "sonar", ControlID: "5678"},
-	{EvidenceType: "gitlab", ControlID: "9012"},
-	{EvidenceType: "practitest", ControlID: "3456"},
-	{EvidenceType: "nonfunctional", ControlID: "2314"},
+// requestTracker keeps track of requests by app_id and control_ids combination
+// key format: "appid|controlid1,controlid2,..."
+var requestTracker = make(map[string]int)
+
+// getRandomEvidenceType returns a random evidence type from the allowed list
+func getRandomEvidenceType() string {
+	return allowedEvidenceTypes[mrand.Intn(len(allowedEvidenceTypes))]
 }
 
 // @Summary Get evidences by control ID
@@ -119,30 +116,16 @@ func getEvidencesHandler(c *gin.Context) {
 		appIDs[i], appIDs[j] = appIDs[j], appIDs[i]
 	})
 
-	// Filter templates by requested control IDs
-	var matchingTemplates []EvidenceTemplate
-	for _, template := range evidenceTemplates {
-		if requested[template.ControlID] {
-			matchingTemplates = append(matchingTemplates, template)
-		}
-	}
-
-	// Return empty array if no matching templates found
-	if len(matchingTemplates) == 0 {
+	// Return empty array if no control IDs requested
+	if len(requested) == 0 {
 		c.JSON(http.StatusOK, []Evidence{})
 		return
 	}
 
-	// Generate fresh evidences while ensuring the (ControlID, EvidenceType)
-	// pair is unique for each returned evidence. We also respect available
-	// appIDs; if we run out of unique combinations or appIDs, we stop early.
+	// Generate fresh evidences with random evidence types
 	var filteredEvidences []Evidence
 
-	seenPairs := make(map[string]bool)
-	evidenceCount := 0
-
-	// Build combinations by iterating appIDs and templates to maximize unique pairs
-	// but stop when we hit numEvidences or when combinations are exhausted.
+	// Build combinations by iterating appIDs and control IDs
 	for i := 0; i < numEvidences; i++ {
 		// select appID for this index; if we run out, stop
 		if i >= len(appIDs) {
@@ -150,34 +133,21 @@ func getEvidencesHandler(c *gin.Context) {
 		}
 		appID := appIDs[i]
 
-		// Try to find a template that yields an unseen (control,evidenceType) pair
-		found := false
-		var chosenTemplate EvidenceTemplate
-		for t := 0; t < len(matchingTemplates); t++ {
-			template := matchingTemplates[(i+t)%len(matchingTemplates)]
-			pairKey := template.ControlID + "|" + template.EvidenceType
-			if !seenPairs[pairKey] {
-				chosenTemplate = template
-				seenPairs[pairKey] = true
-				found = true
-				break
-			}
+		// Rotate through requested control IDs
+		cidList := make([]string, 0, len(requested))
+		for cid := range requested {
+			cidList = append(cidList, cid)
 		}
-
-		if !found {
-			// No more unique template pairs available; stop generating.
-			break
-		}
+		controlID := cidList[i%len(cidList)]
 
 		evidence := Evidence{
 			EvidenceID:     generateSysID(),
-			EvidenceType:   chosenTemplate.EvidenceType,
-			ControlID:      chosenTemplate.ControlID,
+			EvidenceType:   getRandomEvidenceType(),
+			ControlID:      controlID,
 			EvidenceStatus: getRandomStatus(),
 			AppID:          appID,
 		}
 		filteredEvidences = append(filteredEvidences, evidence)
-		evidenceCount++
 	}
 
 	// If we got no evidences, return an empty array instead of null
@@ -225,77 +195,47 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 	// Optional version parameter: will be echoed into the returned Evidence objects
 	versionParam := c.Query("version")
 
-	var evidences []Evidence
-
-	// Determine desired counts per app
-	var desiredCount int
-	switch appID {
-	case "Hogan":
-		desiredCount = 2
-	case "SinglePoint":
-		desiredCount = 4
-	default:
-		// Unknown app_id -> return empty list (200)
-		c.JSON(http.StatusOK, []Evidence{})
-		return
-	}
-
-	// Parse requested control IDs and filter templates accordingly
-	requested := make(map[string]bool)
+	// Parse requested control IDs and normalize them (trim and sort for consistent tracking key)
+	var controlIDsList []string
 	for _, id := range strings.Split(controlIdsParam, ",") {
 		id = strings.TrimSpace(id)
 		if id != "" {
-			requested[id] = true
+			controlIDsList = append(controlIDsList, id)
 		}
 	}
 
-	// Build a filtered list of templates matching requested control IDs
-	var matchingTemplatesFiltered []EvidenceTemplate
-	for _, t := range evidenceTemplates {
-		if requested[t.ControlID] {
-			matchingTemplatesFiltered = append(matchingTemplatesFiltered, t)
-		}
-	}
-
-	if len(matchingTemplatesFiltered) == 0 {
-		// nothing to build
+	if len(controlIDsList) == 0 {
 		c.JSON(http.StatusOK, []Evidence{})
 		return
 	}
 
-	// Build unique (ControlID, EvidenceType) pairs from the filtered templates
-	seen := make(map[string]bool)
-	idx := 0
-	for len(evidences) < desiredCount {
-		base := matchingTemplatesFiltered[idx%len(matchingTemplatesFiltered)]
-		pairKey := base.ControlID + "|" + base.EvidenceType
+	// Create a tracking key to identify unique combinations of app_id, control_ids, and version
+	trackingKey := appID + "|" + strings.Join(controlIDsList, ",") + "|" + versionParam
 
-		tpl := base
-		if seen[pairKey] {
-			// try the next template in the filtered list
-			next := matchingTemplatesFiltered[(idx+1)%len(matchingTemplatesFiltered)]
-			tpl = next
-			pairKey = tpl.ControlID + "|" + tpl.EvidenceType
-			if seen[pairKey] {
-				idx++
-				if idx > desiredCount*10 {
-					break
-				}
-				continue
-			}
-		}
+	// Increment request count for this combination
+	requestTracker[trackingKey]++
+	requestCount := requestTracker[trackingKey]
 
-		seen[pairKey] = true
+	// Generate ONE evidence per control ID with random evidence type
+	var evidences []Evidence
 
+	for _, controlID := range controlIDsList {
+		// Determine status based on request count
+		// Odd requests (1st, 3rd, 5th...): at least one FAILED
+		// Even requests (2nd, 4th, 6th...): all SUCCESS
 		status := "SUCCESS"
-		if appID == "SinglePoint" && len(evidences) == 2 {
-			status = "FAILED"
+		if requestCount%2 == 1 {
+			// Odd request: make at least one evidence FAILED
+			// We'll make the first one FAILED
+			if len(evidences) == 0 {
+				status = "FAILED"
+			}
 		}
 
 		ev := Evidence{
 			EvidenceID:     generateSysID(),
-			EvidenceType:   tpl.EvidenceType,
-			ControlID:      tpl.ControlID,
+			EvidenceType:   getRandomEvidenceType(),
+			ControlID:      controlID,
 			EvidenceStatus: status,
 			AppID:          appID,
 		}
@@ -304,14 +244,9 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 		}
 
 		evidences = append(evidences, ev)
-
-		idx++
-		if idx > desiredCount*10 {
-			break
-		}
 	}
 
-	// Version-specific overrides
+	// Apply version-specific overrides if needed
 	switch versionParam {
 	case "R22-2.0":
 		// Force all evidences to SUCCESS for this version
@@ -332,10 +267,8 @@ func getEvidencesByAppIDHandler(c *gin.Context) {
 			evidences[0].EvidenceStatus = "FAILED"
 		}
 	case "":
-		// No version provided: make all evidences SUCCESS
-		for i := range evidences {
-			evidences[i].EvidenceStatus = "SUCCESS"
-		}
+		// No version provided: use the request count logic (already applied above)
+		// No additional changes needed
 	}
 
 	c.JSON(http.StatusOK, evidences)

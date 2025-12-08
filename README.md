@@ -10,16 +10,13 @@ A microservice that provides evidence information based on control IDs. Built wi
 ## Features
 
 - RESTful API endpoint `/v1/evidences`
-- Query evidences by control ID (1234 for datadog, 5678 for sonar, 9012 for gitlab, 3456 for practitest)
-- Returns 10-26 evidences per request
+- Query evidences by any control ID(s)
+- Returns 10-26 evidences per request with random evidence types
 - Unique appIDs for each evidence (e.g., "Corpsite", "Cruz Bike Rentals", etc.)
-- Evidence type based on control ID:
-  - controlId 1234: datadog evidences
-  - controlId 5678: sonar evidences
-  - controlId 9012: gitlab evidences
-  - controlId 3456: practitest evidences
+- Evidence types randomly assigned from: `datadog`, `sonar`, `gitlab`, `practitest`
 - Random SUCCESS/FAILED status for each evidence
 - Randomly generated 32-character system IDs
+- Stateful `/v1/evidences/by-app` endpoint with odd/even request tracking
 - Docker support
 - Task-based workflow for development and deployment
 
@@ -128,22 +125,22 @@ task docker:clean
 **Endpoint:** `GET /v1/evidences`
 
 **Query Parameters:**
-- `controlId` (required): The ID of the control to fetch evidences for
-  - Use "1234" for datadog evidences
-  - Use "5678" for sonar evidences
-  - Use "9012" for gitlab evidences
-  - Use "3456" for practitest evidences
+- `control_ids` (required): One or more control IDs (comma-separated) to fetch evidences for.
+  - Examples: `control_ids=1234`, `control_ids=1234,5678`
+  - Accepts any control ID values
 
 **Response Details:**
 - Returns between 10 and 26 evidences per request
-- Each evidence has a unique appID representing a specific service (e.g., "Corpsite", "Cruz Bike Rentals")
-- Evidence type is determined by controlId
-- Evidence status is randomly either "SUCCESS" or "FAILED"
-- Each evidence has a unique 32-character sysID with "sys_" prefix
+- Each evidence contains:
+  - `evidenceId` — system-generated ID (32 hex chars, prefixed with `sys_`)
+  - `evidenceType` — randomly assigned from: `datadog`, `sonar`, `gitlab`, `practitest`
+  - `controlId` — one of the requested control IDs (rotated through the list)
+  - `evidenceStatus` — randomly `SUCCESS` or `FAILED`
+  - `appId` — the application/service name
 
 **Example Request for datadog:**
 ```bash
-curl "http://localhost:8080/v1/evidences?controlId=1234"
+curl "http://localhost:8080/v1/evidences?control_ids=1234"
 ```
 
 **Example Response for datadog:**
@@ -168,7 +165,7 @@ curl "http://localhost:8080/v1/evidences?controlId=1234"
 
 **Example Request for Sonar:**
 ```bash
-curl "http://localhost:8080/v1/evidences?controlId=5678"
+curl "http://localhost:8080/v1/evidences?control_ids=5678"
 ```
 
 **Example Response for Sonar:**
@@ -196,23 +193,58 @@ curl "http://localhost:8080/v1/evidences?controlId=5678"
 **Endpoint:** `GET /v1/evidences/by-app`
 
 **Query Parameters:**
-- `app_id` (required): The application identifier. Supported values:
-  - `Hogan` — returns 2 evidences (both SUCCESS)
-  - `SinglePoint` — returns 4 evidences (one FAILED — the 3rd)
-- `controlIds` (required): Comma-separated list of control IDs to include. Example: `1234,5678`.
-- `version` (optional): Optional version string to include in the evidence objects (e.g. `v1.2.3`).
+- `app_id` (required): The application identifier (e.g., `Hogan`, `SinglePoint`, or any custom app name).
+- `control_ids` (required): One or more control IDs (comma-separated). The endpoint returns **one evidence per control ID**.
+- `version` (optional): Any string value to identify the version. When provided, it's included in the response and used for request tracking.
 
-Version-specific behavior
-- If no `version` is provided, the endpoint will return all evidences with `evidenceStatus: "SUCCESS"`.
-- If `version=R22-2.0`, the endpoint forces all returned evidences to `evidenceStatus: "SUCCESS"`.
-- If `version=R22-1.0`, the endpoint guarantees at least one returned evidence has `evidenceStatus: "FAILED"` (if none are failed, the first evidence will be marked FAILED).
+**Stateful Behavior:**
+The endpoint tracks requests by the combination of `app_id`, `control_ids`, and `version`:
+- **Odd-numbered requests** (1st, 3rd, 5th, ...) → at least one evidence will have `FAILED` status
+- **Even-numbered requests** (2nd, 4th, 6th, ...) → all evidences will have `SUCCESS` status
 
-**Example Request (Hogan):**
+**Version-Specific Overrides:**
+- `version=R22-2.0` → forces all evidences to `SUCCESS` (regardless of request count)
+- `version=R22-1.0` → ensures at least one evidence is `FAILED` (regardless of request count)
+- Any other version or no version → follows the odd/even stateful behavior above
+
+**Response:**
+- Returns one evidence per control ID provided
+- Each evidence includes the `app_id` from the request
+- Evidence types are randomly assigned from: `datadog`, `sonar`, `gitlab`, `practitest`
+
+**Example Request (First request for Hogan):**
 ```bash
-curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan&controlIds=1234,5678"
+curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan&control_ids=1234,5678"
 ```
 
-**Example Response (Hogan):**
+**Example Response (First/odd request - at least one FAILED):**
+```json
+[
+  {
+    "evidenceId": "sys_abcdef1234567890abcdef1234567890",
+    "evidenceType": "datadog",
+    "controlId": "1234",
+    "evidenceStatus": "FAILED",
+    "appId": "Hogan",
+    "version": ""
+  },
+  {
+    "evidenceId": "sys_0123456789abcdef0123456789abcdef",
+    "evidenceType": "sonar",
+    "controlId": "5678",
+    "evidenceStatus": "SUCCESS",
+    "appId": "Hogan",
+    "version": ""
+  }
+]
+```
+
+**Example Request (Second request with same parameters):**
+```bash
+curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan&control_ids=1234,5678"
+```
+
+**Example Response (Second/even request - all SUCCESS):**
 ```json
 [
   {
@@ -220,30 +252,47 @@ curl "http://localhost:8080/v1/evidences/by-app?app_id=Hogan&controlIds=1234,567
     "evidenceType": "datadog",
     "controlId": "1234",
     "evidenceStatus": "SUCCESS",
-    "appId": "Hogan"
+    "appId": "Hogan",
+    "version": ""
   },
   {
     "evidenceId": "sys_0123456789abcdef0123456789abcdef",
     "evidenceType": "sonar",
     "controlId": "5678",
     "evidenceStatus": "SUCCESS",
-    "appId": "Hogan"
+    "appId": "Hogan",
+    "version": ""
   }
 ]
 ```
 
-**Example Request (SinglePoint):**
+**Example Request (SinglePoint with version R22-2.0):**
 ```bash
-curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint&controlIds=1234,5678,9012,3456&version=v1.2.3"
+curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint&control_ids=1234,5678,9012,3456&version=R22-2.0"
 ```
 
-**Example Response (SinglePoint):**
+**Example Response (R22-2.0 - all SUCCESS):**
 ```json
 [
-  { "evidenceId": "sys_a1b2c3d4e5f60123456789abcdefabcd", "evidenceType": "datadog", "controlId": "1234", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" },
-  { "evidenceId": "sys_b1c2d3e4f5a60123456789abcdefabcd", "evidenceType": "sonar",   "controlId": "5678", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" },
-  { "evidenceId": "sys_c1d2e3f4a5b60123456789abcdefabcd", "evidenceType": "gitlab",  "controlId": "9012", "evidenceStatus": "FAILED",  "appId": "SinglePoint" },
-  { "evidenceId": "sys_d1e2f3a4b5c60123456789abcdefabcd", "evidenceType": "practitest","controlId": "3456", "evidenceStatus": "SUCCESS", "appId": "SinglePoint" }
+  { "evidenceId": "sys_a1b2c3d4e5f60123456789abcdefabcd", "evidenceType": "datadog", "controlId": "1234", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-2.0" },
+  { "evidenceId": "sys_b1c2d3e4f5a60123456789abcdefabcd", "evidenceType": "sonar",   "controlId": "5678", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-2.0" },
+  { "evidenceId": "sys_c1d2e3f4a5b60123456789abcdefabcd", "evidenceType": "gitlab",  "controlId": "9012", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-2.0" },
+  { "evidenceId": "sys_d1e2f3a4b5c60123456789abcdefabcd", "evidenceType": "practitest","controlId": "3456", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-2.0" }
+]
+```
+
+**Example Request (SinglePoint with version R22-1.0 - at least one FAILED):**
+```bash
+curl "http://localhost:8080/v1/evidences/by-app?app_id=SinglePoint&control_ids=1234,5678,9012,3456&version=R22-1.0"
+```
+
+**Example Response (R22-1.0 - at least one FAILED):**
+```json
+[
+  { "evidenceId": "sys_a1b2c3d4e5f60123456789abcdefabcd", "evidenceType": "datadog", "controlId": "1234", "evidenceStatus": "FAILED", "appId": "SinglePoint", "version": "R22-1.0" },
+  { "evidenceId": "sys_b1c2d3e4f5a60123456789abcdefabcd", "evidenceType": "sonar",   "controlId": "5678", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-1.0" },
+  { "evidenceId": "sys_c1d2e3f4a5b60123456789abcdefabcd", "evidenceType": "gitlab",  "controlId": "9012", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-1.0" },
+  { "evidenceId": "sys_d1e2f3a4b5c60123456789abcdefabcd", "evidenceType": "practitest","controlId": "3456", "evidenceStatus": "SUCCESS", "appId": "SinglePoint", "version": "R22-1.0" }
 ]
 ```
 
@@ -287,16 +336,8 @@ Azure Operations:
 - `task azure:create-acr` - Create Azure Container Registry
 - `task azure:get-acr-creds` - Get ACR credentials
 - `task azure:create-env` - Create Container Apps Environment
-- `task azure:deploy` - Deploy to Azure Container Apps (low-level create/update)
-- `task deploy:prepare` - Validate environment and prerequisites (runs `scripts/validate_env.sh`)
-- `task deploy:infra` - Ensure resource group, ACR and Container Apps env (idempotent)
-- `task deploy:auth` - Authenticate to Azure and ACR (`azure:login` + `azure:acr-login`)
-- `task deploy:build` - Run local build and tests
-- `task deploy:image` - Build Docker image
-- `task deploy:publish` - Tag and push image to ACR
-- `task deploy:app` - Create / update Container App (wraps `azure:deploy`)
-- `task deploy:verify` - Run smoke tests against deployed app (`scripts/smoke_test.sh`)
-- `task deploy:all` - Orchestrated deploy (prepare -> infra -> auth -> build -> image -> publish -> app -> verify)
+- `task azure:deploy` - Deploy to Azure Container Apps
+- `task deploy:all` - Build, push and deploy to Azure (full deployment)
 - `task azure:cleanup` - Clean up all Azure resources
 
 ### Environment Variables
@@ -369,32 +410,29 @@ The deployment process will automatically handle ACR authentication using admin 
 
 ### Deploy to Azure
 
-You can deploy the application using a modular flow. `task deploy:all` still exists but now orchestrates a set of smaller tasks. This gives you the ability to re-run a specific stage if it fails.
-
-Run the full orchestrated deploy:
+You can deploy the entire application with a single command that will set up all required Azure resources, build and push the Docker image, and deploy the application:
 
 ```bash
 task deploy:all
 ```
 
-Or run stages individually when troubleshooting:
+This command will:
+1. Log in to Azure and set up Azure resources:
+   - Create Resource Group
+   - Create Azure Container Registry (ACR)
+   - Log in to ACR
+   - Create Container Apps Environment
 
-- `task deploy:prepare` — validate environment and prerequisites (`scripts/validate_env.sh`)
-- `task deploy:infra` — ensure Resource Group, ACR and Container Apps Environment (idempotent)
-- `task deploy:auth` — authenticate to Azure and ACR
-- `task deploy:build` — run unit tests and build the binary
-- `task deploy:image` — build the Docker image
-- `task deploy:publish` — tag and push the image to ACR
-- `task deploy:app` — create or update the Container App
-- `task deploy:verify` — run smoke tests against the live app (`scripts/smoke_test.sh`)
+2. Build and push the Docker image:
+   - Build image with AMD64 platform support
+   - Tag image for ACR
+   - Push to Azure Container Registry
 
-Why this helps:
-
-- Easier debugging: re-run only the failing stage (for example `task deploy:publish`) instead of repeating the full flow.
-- Safer infra changes: `deploy:infra` is idempotent and will not recreate resources unnecessarily.
-- Better CI mapping: each stage can be a separate CI job (lint/test/build/publish/deploy/verify).
-
-If you prefer the old one-shot behavior, `task deploy:all` will run the full orchestrated flow.
+3. Deploy the application:
+   - Create Container App
+   - Set up external ingress
+   - Configure ACR authentication
+   - Deploy the application
 
 ### Clean Up Azure Resources
 
@@ -428,16 +466,6 @@ task azure:create-env      # Create Container Apps Environment
 # Docker Operations
 task docker:build         # Build the container image
 task docker:push          # Push to Container Registry
-
-# Deploy helper tasks (new, modular)
-task deploy:prepare      # Validate env and prerequisites
-task deploy:infra        # Ensure RG/ACR/Container Apps env
-task deploy:auth         # Azure + ACR login
-task deploy:build        # Run build and tests
-task deploy:image        # Build Docker image
-task deploy:publish      # Tag and push image
-task deploy:app          # Create/update Container App
-task deploy:verify       # Run smoke tests against deployed app
 
 # Deployment
 task azure:deploy        # Deploy to Container Apps
